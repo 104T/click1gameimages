@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>1ページを見るための旅 - クリックゲーム</title>
+<style>
+:root{--bg:#0b1120;--muted:#94a3b8;--text:#e5e7eb;--you:#2563eb;--peer:#334155;--dns:#7c3aed;--ca:#059669;--accent:#22d3ee}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans JP",sans-serif;-webkit-font-smoothing:antialiased}
+
+/* スマホ枠 */
+.phone{
+  position:relative;                /* ← ending の基準 */
+  max-width:420px; margin:16px auto;
+  min-height:100svh; display:flex; flex-direction:column;
+  background:#fff; border-radius:28px;
+  border:1px solid #e5e7eb; box-shadow:0 10px 30px rgba(0,0,0,.25);
+  overflow:hidden;
+}
+
+/* ヘッダー */
+header{position:sticky;top:0;background:linear-gradient(180deg,#ffffff 75%,#ffffff00);padding:12px 16px;border-bottom:1px solid #e5e7eb;z-index:5}
+.counter{font-weight:700;font-size:18px;color:#0b1120}
+.sub{color:#054fd8;font-size:18px}
+
+/* ステージ：中央に現在ログ、上部に前文（最大3段） */
+.stage{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:16px;background:#fff}
+
+.prevWrap{
+  position:sticky; top:var(--header-h,56px);
+  width:100%; display:flex; flex-direction:column; align-items:center;
+  gap:8px; pointer-events:none;
+}
+.prev{max-width:92%;width:92%;padding:10px 12px;border-radius:14px;font-size:13px;line-height:1.5;background:rgba(148,163,184,0.30);color:#334155;border:1px solid #e5e7eb;transition:transform .25s ease, opacity .25s ease}
+.prev .label{font-size:11px;opacity:.95;margin-bottom:4px;display:block}
+.prev .text{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.prev.rise{animation:riseIn .25s ease}
+@keyframes riseIn{from{transform:translateY(8px);opacity:.6}to{transform:translateY(0);opacity:1}}
+
+/* 現在ログバブル */
+.current{max-width:100%;width:100%;padding:24px;border-radius:20px;font-size:22px;line-height:1.8;box-shadow:0 8px 24px rgba(0,0,0,.35);color:#fff;cursor:pointer}
+.current.you{background:linear-gradient(180deg,#2563eb,#1e40af)}
+.current.peer{background:linear-gradient(180deg,#16a34a,#166534)}
+.current.dns{background:linear-gradient(180deg,#7c3aed,#5b21b6)}
+.current.ca{background:linear-gradient(180deg,#0ea5a4,#0f766e)}
+.current.mal{background:linear-gradient(180deg,#991b1b,#7f1d1d)}
+.current .label{font-size:13px;opacity:.9;margin-bottom:6px;display:block}
+.current:active{transform:translateY(1px) scale(0.995)}
+
+/* 下部操作 */
+.controls{position:sticky;bottom:0;padding:12px 16px;background:linear-gradient(0deg,#ffffff 70%,#ffffff00);border-top:1px solid #e5e7eb;display:flex;gap:10px;z-index:4}
+button{appearance:none;border:0;border-radius:14px;padding:16px 20px;font-weight:700;font-size:16px}
+.next{display:none}
+.reset{background:#1f2937;color:#e5e7eb}
+
+/* イントロ＆疑似インデックス（全画面でOK） */
+.intro,.indexPage{position:fixed; inset:0; display:none; flex-direction:column; z-index:999}
+.intro{ background:#fff; color:#0b1120; align-items:center; justify-content:center; text-align:center; gap:20px; padding:24px}
+.intro .title{ font-weight:800; line-height:1.2; font-size:clamp(28px,7vw,40px)}
+.intro .cta{ background:#22d3ee; color:#0b1120; border-radius:16px; padding:14px 20px; font-weight:800; font-size:18px; border:0; cursor:pointer }
+.intro .hint{ color:#64748b; font-size:13px }
+.indexPage{ background:#fff; color:#0b1120; align-items:center; justify-content:center; gap:12px; padding:16px}
+.indexPage img{ max-width:100%; max-height:70vh; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.15); object-fit:contain; background:#f8fafc }
+.indexPage .caption{ font-size:14px; color:#64748b }
+.indexPage .tap{ margin-top:4px; font-size:13px; color:#0b1120; opacity:.7 }
+
+/* エンディング：phone内オーバーレイ */
+.ending{
+  position:absolute; inset:0; display:none; flex-direction:column; z-index:50;
+  background:#000; color:#c8e1d8;
+}
+.stream{
+  flex:1; font-family:ui-monospace,Menlo,Consolas,monospace;
+  font-size:clamp(11px, 2.6vw, 13px); line-height:1.35;
+  font-variant-numeric:tabular-nums;
+  white-space:pre; overflow:auto; padding:12px;
+}
+.endcap{padding:20px 16px;border-top:1px solid #0f172a;text-align:center}
+.endcap h2{margin:0 0 6px;font-size:20px}
+.endcap p{margin:0 0 12px;color:#9ca3af}
+.replay{background:#22d3ee;color:#0b1120;font-size:16px;padding:16px 20px;border-radius:14px}
+
+/* タイトル画像 */
+.intro .titleImg{
+  width:min(92vw, 420px); height:auto; display:block;
+  filter: drop-shadow(0 8px 24px rgba(0,0,0,.15)); user-select:none;
+}
+
+/* 現在ログの下のフェーズ説明 */
+.pinfo{
+  display:none; width:100%; max-width:100%;
+  background:#f8fafc; border:1px solid #e5e7eb; border-radius:16px;
+  padding:12px 16px; color:#0b1120;
+}
+.pinfo .ttl{font-weight:800;font-size:clamp(14px,2.6vw,16px);margin-bottom:6px}
+.pinfo .what,.pinfo .why{font-size:clamp(16px,3vw,18px);line-height:1.6}
+
+/* 上流れヒント */
+.flowHint{
+  position:sticky; top:calc(var(--header-h,56px) + 4px); z-index:2;
+  width:100%; text-align:center;
+  font-size:clamp(12px, 3.2vw, 22px); color:#2b3242;
+  pointer-events:none; user-select:none; animation:bounceUp 1.2s ease-in-out infinite;
+}
+@keyframes bounceUp{0%,100%{transform:translateY(0);opacity:.9}50%{transform:translateY(-4px);opacity:1}}
+
+/* スマホらしさ（ノッチ＆ステータスバー） */
+.deviceTop{ position:relative; height:20px }
+.deviceTop .notch{
+  position:absolute; left:50%; transform:translateX(-50%); top:-8px;
+  width:120px; height:18px; background:#0b1120; border-radius:0 0 12px 12px;
+}
+.deviceTop .statusbar{
+  display:flex; justify-content:space-between; align-items:center;
+  padding:0 12px; font-size:11px; color:#334155;
+}
+</style>
+</head>
+<body>
+  <main class="phone" role="application" aria-label="1ページを見るための旅 クリックゲーム">
+    <header>
+      <div class="deviceTop" aria-hidden="true">
+        <div class="notch"></div>
+        <div class="statusbar">
+          <span class="time">9:41</span><span class="net"> </span><span class="bat">mocomo LTE ¥|| 100%</span>
+        </div>
+      </div>
+      <div class="counter" id="counter">0 / 0 通信完了</div>
+      <div class="sub" id="phase">タイトル：いつものアニメサイトでも見よ～っと</div>
+    </header>
+
+    <section class="stage">
+      <div id="flowHint" class="flowHint" aria-hidden="true">▲ ログは上に流れます</div>
+      <div class="prevWrap" id="prevList"></div>
+
+      <div id="current" class="current peer" role="button" tabindex="0" aria-label="メッセージをタップして次へ">
+        <span class="label">サーバー</span><div class="text">▶ START を押してね</div>
+      </div>
+
+      <div id="phaseInfo" class="pinfo" aria-live="polite">
+        <div class="ttl">各フェーズが指すこと</div>
+        <div class="what">—</div>
+        <div class="why">—</div>
+      </div>
+    </section>
+
+    <nav class="controls">
+      <button id="btnNext" class="next">▶ 次へ</button>
+      <button id="btnReset" class="reset" title="最初からやり直す">リセット</button>
+    </nav>
+
+    <!-- ending を phone 内に配置 -->
+    <section id="ending" class="ending" aria-hidden="true">
+      <div id="stream" class="stream"></div>
+      <div class="endcap">
+        <h2>実際は、ページを開くたびに、もっと多くのやり取りが一瞬で起こっているのだ！</h2>
+        <p>Value security. Respect privacy.</p>
+        <button id="btnReplay" class="replay">▶ もう一度最初から</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- タイトル画面（全画面） -->
+  <section id="intro" class="intro" aria-label="ゲーム開始">
+    <img class="titleImg" src="./images/top1.png" alt="いつものアニメサイトでも見よ～っと" draggable="false" decoding="async">
+    <button id="btnStart" class="cta">▶ クリックしてはじめる</button>
+    <div class="hint">タップ/クリックでも開始できます</div>
+  </section>
+
+  <!-- 疑似インデックス（全画面） -->
+  <section id="indexPage" class="indexPage" aria-hidden="true">
+    <img id="indexImg" src="./images/index.png" alt="疑似ページ（サンプル）">
+    <div class="caption">疑似アニメサイトページ（JPG）</div>
+    <div class="tap">▶ タップして続行</div>
+  </section>
+
+<script>
+(function(){
+  const currentEl = document.getElementById('current');
+  const prevListEl = document.getElementById('prevList');
+  const nextBtn = document.getElementById('btnNext');
+  const resetBtn = document.getElementById('btnReset');
+  const counterEl = document.getElementById('counter');
+  const phaseEl = document.getElementById('phase');
+  const introEl = document.getElementById('intro');
+  const btnStart = document.getElementById('btnStart');
+  const indexEl = document.getElementById('indexPage');
+  const endingEl = document.getElementById('ending');
+  const streamEl = document.getElementById('stream');
+  const replayBtn = document.getElementById('btnReplay');
+  const headerEl = document.querySelector('header');
+  const phaseInfoEl = document.getElementById('phaseInfo');
+  const phaseWhatEl = phaseInfoEl.querySelector('.what');
+  const phaseWhyEl  = phaseInfoEl.querySelector('.why');
+  const flowHintEl = document.getElementById('flowHint');
+  const timeEl = document.querySelector('.deviceTop .statusbar .time');
+
+
+  let mode = 'intro'; // intro | game | index | ending
+
+  function syncHeaderTop(){
+    const h = headerEl?.offsetHeight || 56;
+    document.documentElement.style.setProperty('--header-h', h + 'px');
+  }
+  syncHeaderTop();
+  window.addEventListener('resize', syncHeaderTop);
+
+  // 実時間の時計（ローカル時間。JST固定にしたい場合は下の options に timeZone を追加）
+function startClock(){
+  if(!timeEl) return;
+
+  function tick(){
+    const now = new Date();
+    // ブラウザのローカル時間：24時間表記の HH:mm
+    const options = { hour:'2-digit', minute:'2-digit', hour12:false };
+    // ← 「常に日本時間（JST）」にしたい場合は次の1行を有効化
+    // options.timeZone = 'Asia/Tokyo';
+
+    timeEl.textContent = new Intl.DateTimeFormat('ja-JP', options).format(now);
+  }
+
+  // まず即反映
+  tick();
+  // 次の「分」の切り替わりジャストに更新 → 以降は毎分更新
+  const now = new Date();
+  const msToNextMinute = (60 - now.getSeconds()) * 1000 - now.getMilliseconds();
+  setTimeout(function updateEveryMinute(){
+    tick();
+    setInterval(tick, 60 * 1000);
+  }, msToNextMinute);
+
+  // タブ復帰時に即更新（スリープ後のズレ対策）
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) tick();
+  });
+}
+
+// 起動
+startClock();
+
+
+  // ===== 本編メッセージ =====
+  const convo = [];
+  // DNS
+  convo.push(
+    {from:'you', text:'アニメサイトのアドレスを調べます', phase:'DNS'},
+    {from:'dns', text:'anime-site.com のアドレスは 203.0.113.45 です', phase:'DNS'}
+  );
+  // TCP
+  convo.push(
+    {from:'you', text:'トントン、つないでいい？ (SYN)', phase:'TCP'},
+    {from:'server', text:'いいよ！ (SYN-ACK)', phase:'TCP'},
+    {from:'you', text:'よろしく！ (ACK)', phase:'TCP'}
+  );
+  // TLS
+  convo.push(
+    {from:'you', text:'合言葉を決めましょう (ClientHello)', phase:'TLS'},
+    {from:'server', text:'OK、TLS1.3で話そう (ServerHello)', phase:'TLS'},
+    {from:'server', text:'これが私の身分証 (証明書)', phase:'TLS'},
+    {from:'you', text:'身分証を確認しました、OKです', phase:'TLS'},
+    {from:'server', text:'ここからはヒミツの会話です', phase:'TLS'}
+  );
+  // HTML
+  convo.push(
+    {from:'you', text:'サイトの本文をください', phase:'HTML'},
+    {from:'server', text:'200 OK (HTML本文)', phase:'HTML'}
+  );
+  // リソース
+  const resources = [
+    ['/css/style.css','CSS'],['/css/responsive.css','CSS'],['/css/theme.css','CSS'],
+    ['/js/app.js','JavaScript'],['/js/runtime.js','JavaScript'],['/js/player.js','JavaScript'],
+    ['/js/ads.js','JavaScript'], ['/js/malware.js','JavaScript'],
+    ['/images/logo.png','PNG'],['/images/header.jpg','JPEG'],['/images/hero.jpg','JPEG'],
+    ['/images/thumb1.jpg','JPEG'],['/images/thumb2.jpg','JPEG'],['/images/thumb3.jpg','JPEG'],['/images/thumb4.jpg','JPEG'],
+    ['/icons/icon-192.png','Icon'],['/icons/icon-512.png','Icon'],
+    ['/fonts/opensans.woff2','Font'],['/video/intro.mp4 (一部)','Video']
+  ];
+  resources.forEach(([path,type])=>{
+    convo.push({from:'you', text:`${type} をください (${path})`, phase:'RES'});
+    const code = type==='Video' ? '206 Partial Content' : '200 OK';
+    const mime = type==='CSS' ? 'text/css' : type==='JavaScript' ? 'application/javascript' : type==='Font' ? 'font/woff2' : type==='PNG' ? 'image/png' : type==='JPEG' ? 'image/jpeg' : type==='Icon' ? 'image/png' : type==='Video' ? 'video/mp4' : 'application/octet-stream';
+    convo.push({from:'server', text:`${code} (${mime})`, phase:'RES'});
+  });
+  // セキュリティ
+  convo.push(
+    {from:'you',    text:'読み込んだスクリプトの整合性を確認します（SRI）', phase:'SEC'},
+    {from:'you',    text:'/js/ads.js のハッシュが一致しません。改ざんの可能性 → 実行をブロック', phase:'SEC'},
+    {from:'server', text:'CSP: script-src ポリシーにより /js/ads.js を拒否しました', phase:'SEC'},
+    {from:'mal',    text:'悪意あるコードが実行を試みています (/js/malware.js)', phase:'SEC'},
+    {from:'server', text:'ブラウザ保護が危険を検出 → ダウンロードをブロック', phase:'SEC'},
+    {from:'you',    text:'実行前に隔離しました', phase:'SEC'},
+    {from:'you', text:'証明書が本物か確認します（OCSP）', phase:'SEC'},
+    {from:'ca',  text:'有効です！', phase:'SEC'},
+    {from:'you', text:'Cookieを送ります', phase:'SEC'},
+    {from:'server', text:'Cookieを受け取りました', phase:'SEC'}
+  );
+  // GOAL
+  convo.push(
+    {from:'you', text:'必要なものが全部そろいました', phase:'GOAL'},
+    {from:'server', text:'ページを表示できます！', phase:'GOAL'}
+  );
+
+  let idx = 0;
+  let hintLeft = 3;                   // ヒントは最初の3回
+  const total = convo.length;
+  const prevBuffer = [];              // 直前3件
+
+  // ===== イベント =====
+  btnStart.addEventListener('click', startGame);
+  introEl.addEventListener('click', (e)=>{ if(e.target === introEl) startGame(); });
+  introEl.style.display = 'flex';     // タイトル表示
+
+  nextBtn.addEventListener('click', onNext);
+  resetBtn.addEventListener('click', resetAll);
+  replayBtn.addEventListener('click', ()=>{ endingEl.style.display='none'; resetAll(); });
+
+  currentEl.addEventListener('click', onNext);
+  currentEl.addEventListener('keydown', (e)=>{
+    if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); onNext(); }
+  });
+
+  indexEl.addEventListener('click', ()=>{
+    if(mode!=='index') return;
+    indexEl.style.display='none';
+    runEnding();
+    mode='ending';
+  });
+
+  function startGame(){
+    if(mode!=='intro') return;
+    introEl.style.display='none';
+    mode='game';
+    idx = 0; prevBuffer.length = 0; prevListEl.innerHTML = '';
+    counterEl.textContent = `0 / ${total} 通信完了`;
+    updatePhaseUI(convo[0].phase);
+    hintLeft = 3;
+    flowHintEl.style.display = 'block';
+
+    stageTo(convo[idx++]);
+    updateCounter();
+  }
+
+  function onNext(){
+    if(mode!=='game') return;
+    if(idx >= total) return;
+
+    const nextMsg = convo[idx++];
+    const prevMsg = getCurrentSnapshot();
+    pushPrev(prevMsg);
+    stageTo(nextMsg);
+    updatePrevUI();
+    updateCounter();
+    updatePhaseUI(nextMsg.phase);
+
+    if (hintLeft > 0){
+      hintLeft--;
+      if (hintLeft === 0) flowHintEl.style.display = 'none';
+    }
+
+    if(idx>=total){ showIndex(); }
+  }
+
+  function showIndex(){
+    mode='index';
+    indexEl.style.display='flex';
+    endingEl.style.display='none';
+    endingEl.setAttribute('aria-hidden','true');
+  }
+
+  function pushPrev(m){
+    if(!m || !m.text) return;
+    prevBuffer.unshift(m);
+    if(prevBuffer.length>3){ prevBuffer.pop(); }  // ← 3段まで
+  }
+
+  function updatePrevUI(){
+    prevListEl.innerHTML = '';
+    prevBuffer.forEach((m)=>{
+      const item = document.createElement('div');
+      item.className = 'prev ' + roleClass(m.from);
+      const label = document.createElement('span');
+      label.className = 'label';
+      label.textContent = roleName(m.from);
+      const text = document.createElement('div');
+      text.className = 'text';
+      text.textContent = m.text;
+      item.append(label, text);
+      prevListEl.appendChild(item);
+    });
+    const first = prevListEl.firstElementChild;
+    if (first) {
+      first.classList.add('rise');
+      setTimeout(()=> first.classList.remove('rise'), 260);
+    }
+  }
+
+  function getCurrentSnapshot(){
+    return {
+      from: currentEl.dataset.from || 'server',
+      text: currentEl.querySelector('.text').textContent || '',
+    };
+  }
+
+  function stageTo(cur){
+    currentEl.dataset.from = cur.from;
+    currentEl.className = 'current ' + roleClass(cur.from);
+    const label = document.createElement('span');
+    label.className = 'label';
+    label.textContent = roleName(cur.from);
+    const text = document.createElement('div');
+    text.className = 'text';
+    text.textContent = cur.text;
+    currentEl.replaceChildren(label, text);
+  }
+
+  function roleClass(from){
+    if(from==='you') return 'you';
+    if(from==='dns') return 'dns';
+    if(from==='ca') return 'ca';
+    if(from==='mal') return 'mal';
+    return 'peer';
+  }
+  function roleName(from){
+    return from==='you' ? 'あなた'
+         : from==='dns' ? 'DNS'
+         : from==='ca'  ? '認証局'
+         : from==='mal' ? 'マルウェア'
+         : 'サーバー';
+  }
+
+  function updateCounter(){ counterEl.textContent = `${Math.min(idx, total)} / ${total} 通信完了`; }
+  function updatePhaseLabel(p){ phaseEl.textContent = p; }
+  function currentPhaseName(p){
+    switch(p){
+      case 'DNS': return 'アドレス検索（DNS）';
+      case 'TCP': return 'つながるためのノック（TCP）';
+      case 'TLS': return '秘密の会話の準備（TLS）';
+      case 'HTML': return '本文の受け取り（HTML）';
+      case 'RES': return '材料を集める（CSS/JS/画像 など）';
+      case 'SEC': return '安全の確認（OCSP / Cookie / SRI / CSP / マルウェア）';
+      case 'GOAL': return 'ページ完成！';
+      default: return '';
+    }
+  }
+
+  function phaseExplain(p){
+    switch(p){
+      case 'DNS': return { what:'「名前 → 数字の住所」変換（例：anime-site.com → 203.0.113.45）。', why:'住所が分からないと相手に届かない。' };
+      case 'TCP': return { what:'SYN → SYN-ACK → ACK の挨拶で接続を確立する。', why:'順番どおり・欠けずに届ける土台になる。' };
+      case 'TLS': return { what:'暗号鍵を決めて、証明書で相手が本物か確認する。',  why:'盗み聞き・なりすましを防ぐため。' };
+      case 'HTML':return { what:'最初の骨組み（index.html）を受け取る。',        why:'次に取るCSS/JS/画像の道順が分かる。' };
+      case 'RES': return { what:'CSS/JS/画像/フォント/動画など部品を次々ダウンロードする。', why:'見た目や動きを完成させる材料だ。' };
+      case 'SEC': return { what:'OCSP/Cookie/SRI/CSP/マルウェア検出などで安全性を確認する。', why:'安全を保ったまま表示を完了するため。' };
+      case 'GOAL':return { what:'必要な素材がそろいレンダリング完了だ。',        why:'ユーザーが「見て触れる」状態に到達だ。' };
+      default: return null;
+    }
+  }
+
+  function renderPhaseInfo(pKey){
+    const info = phaseExplain(pKey);
+    if(!info){
+      phaseInfoEl.style.display = 'none';
+    }else{
+      phaseInfoEl.style.display = 'block';
+      phaseWhatEl.textContent = '何をしてる？…' + info.what;
+      phaseWhyEl.textContent  = 'なぜ大事？…'   + info.why;
+    }
+    syncHeaderTop(); // 高さ再同期
+  }
+
+  function updatePhaseUI(pKey){
+    if(!pKey){
+      phaseEl.textContent = 'タイトル：いつものアニメサイトでも見よ～っと';
+      renderPhaseInfo(null);
+    }else{
+      updatePhaseLabel(currentPhaseName(pKey));
+      renderPhaseInfo(pKey);
+    }
+  }
+
+  // ===== リセット =====
+  function resetAll(){
+    indexEl.style.display='none';
+    endingEl.style.display = 'none';
+    endingEl.setAttribute('aria-hidden','true');
+    streamEl.textContent = '';
+
+    mode='intro'; idx = 0; prevBuffer.length = 0; prevListEl.innerHTML = '';
+    nextBtn.disabled = false;
+
+    updateCounter();
+    updatePhaseUI(null);
+    introEl.style.display='flex';
+    syncHeaderTop();
+  }
+
+  // ===== エンディング：英語ベースのログを一気に流す =====
+  function runEnding(){
+    endingEl.style.display = 'flex';
+    endingEl.setAttribute('aria-hidden','false');
+    streamEl.textContent = '';
+
+    const base = new Date();
+    const ts = (i)=>{
+      const d = new Date(base.getTime() + i*11);
+      const h = String(d.getHours()).padStart(2,'0');
+      const m = String(d.getMinutes()).padStart(2,'0');
+      const s = String(d.getSeconds()).padStart(2,'0');
+      const ms = String(d.getMilliseconds()).padStart(3,'0');
+      return "["+h+":"+m+":"+s+"."+ms+"]";
+    };
+
+    const lines = [];
+    lines.push(ts(0)+" DNS query anime-site.com -> 8.8.8.8");
+    lines.push(ts(1)+" DNS response 203.0.113.45 TTL=299");
+    lines.push(ts(2)+" TCP SYN sent to 203.0.113.45:443");
+    lines.push(ts(3)+" TCP SYN-ACK received");
+    lines.push(ts(4)+" TCP ACK sent (connection established)");
+    lines.push(ts(5)+" TLS ClientHello (SNI=anime-site.com, ALPN=h2)");
+    lines.push(ts(6)+" TLS ServerHello (TLS1.3)");
+    lines.push(ts(7)+" TLS Certificate (CN=anime-site.com) verified");
+    lines.push(ts(8)+" TLS Finished (keys established)");
+    lines.push(ts(9)+" HTTP/2 GET /index.html");
+    lines.push(ts(10)+" HTTP/2 200 OK (text/html; 38KB)");
+
+    const assets = [
+      ['/css/style.css','text/css',12], ['/css/responsive.css','text/css',8], ['/css/theme.css','text/css',9],
+      ['/js/app.js','application/javascript',95], ['/js/runtime.js','application/javascript',9], ['/js/player.js','application/javascript',31],
+      ['/js/ads.js','application/javascript',42], ['/js/malware.js','application/javascript',17],
+      ['/images/logo.png','image/png',14], ['/images/header.jpg','image/jpeg',240], ['/images/hero.jpg','image/jpeg',320]
+    ];
+    for(let i=1;i<=30;i++){ assets.push(["/images/gallery/"+String(i).padStart(2,'0')+".jpg",'image/jpeg',180+i]); }
+    assets.push(['/icons/icon-192.png','image/png',8]);
+    assets.push(['/icons/icon-512.png','image/png',18]);
+    assets.push(['/fonts/opensans.woff2','font/woff2',64]);
+    for(let p=0;p<8;p++){ assets.push(["/video/intro.mp4 (chunk "+p+")",'video/mp4',256+p*12]); }
+
+    let tIndex = 11;
+    assets.forEach(([path,mime,size])=>{
+      lines.push(ts(tIndex++) + " HTTP/2 GET " + path);
+      lines.push(ts(tIndex++) + " HTTP/2 200 OK (" + mime + "; " + size + "KB)");
+      if(path === '/js/ads.js'){
+        lines.push(ts(tIndex++) + " SRI check FAILED for /js/ads.js");
+        lines.push(ts(tIndex++) + " Blocked by CSP (script-src 'self')");
+      }
+      if(path === '/js/malware.js'){
+        lines.push(ts(tIndex++) + " SafeBrowsing: MALWARE detected for /js/malware.js");
+        lines.push(ts(tIndex++) + " Download blocked; quarantined");
+      }
+    });
+    for(let s=1;s<=10;s++){ lines.push(ts(tIndex++)+" HTTP/2 STREAM "+s+" closed"); }
+    lines.push(ts(tIndex++)+" Page Rendered");
+    lines.push(ts(tIndex++)+" All resources ready");
+    lines.push(ts(tIndex++)+" Done.");
+
+    let i=0; const totalLines = lines.length;
+    const timer = setInterval(()=>{
+      const chunk = 8;
+      for(let k=0;k<chunk && i<totalLines;k++,i++){
+        streamEl.append(lines[i] + (i<totalLines-1 ? "\n" : ""));
+      }
+      streamEl.scrollTop = streamEl.scrollHeight;
+      if(i>=totalLines){ clearInterval(timer); }
+    }, 20);
+  }
+})();
+</script>
+</body>
+</html>
